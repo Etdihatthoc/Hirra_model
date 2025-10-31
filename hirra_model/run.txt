@@ -1,0 +1,95 @@
+/mnt/disk1/anaconda3/envs/RG_DICE/lib/python3.8/site-packages/transformers/utils/hub.py:128: FutureWarning: Using `TRANSFORMERS_CACHE` is deprecated and will be removed in v5 of Transformers. Use `HF_HOME` instead.
+  warnings.warn(
+/mnt/disk1/anaconda3/envs/RG_DICE/lib/python3.8/site-packages/vector_quantize_pytorch/vector_quantize_pytorch.py:261: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  @autocast(enabled = False)
+/mnt/disk1/anaconda3/envs/RG_DICE/lib/python3.8/site-packages/vector_quantize_pytorch/vector_quantize_pytorch.py:391: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  @autocast(enabled = False)
+================================================================================
+TESTING GRAPH REASONING COMPONENTS
+================================================================================
+
+[1/6] Testing imports...
+✓ Graph reasoning modules imported successfully
+Using device: cuda
+
+[2/6] Testing ROIPairGraphBuilder...
+  ROI features: torch.Size([5, 512])
+  ROI boxes: torch.Size([5, 6])
+  Graph edges: torch.Size([2, 14])
+  Edge features: torch.Size([14, 512])
+  Number of edges: 14
+  Spatial relations computed: ['distance', 'normalized_distance', 'overlap', 'relative_pos', 'relative_size', 'same_region', 'encoded']
+✓ ROIPairGraphBuilder working correctly
+
+[3/6] Testing ROIGraphAttentionNetwork...
+  Input features: torch.Size([5, 512])
+  Enhanced features: torch.Size([5, 512])
+  Graph representation: torch.Size([1, 512])
+✓ ROIGraphAttentionNetwork working correctly
+
+[4/6] Testing HierarchicalROIGraph...
+  Input features: torch.Size([5, 512])
+  Enhanced features: torch.Size([5, 512])
+  Graph representation: torch.Size([1, 512])
+  Organ assignments: [1, 1, 2, 3, 5]
+    ROI 1,2 (Brain): 1, 1
+    ROI 3,4 (Chest): 2, 3
+    ROI 5 (Pelvis): 5
+✓ HierarchicalROIGraph working correctly
+
+[5/6] Testing integration with AdvancedFeatureExtractor...
+  [No Graph] Global context: torch.Size([2, 32, 512])
+  [No Graph] ROI features: [torch.Size([2, 512]), torch.Size([1, 512])]
+[Graph Reasoning] Initialized with config: basic
+  [Basic Graph] Global context: torch.Size([2, 33, 512])
+  [Basic Graph] ROI features: [torch.Size([2, 512]), torch.Size([1, 512])]
+[Graph Reasoning] Initialized with config: hierarchical
+  [Hierarchical Graph] Global context: torch.Size([2, 33, 512])
+  [Hierarchical Graph] ROI features: [torch.Size([2, 512]), torch.Size([1, 512])]
+✓ AdvancedFeatureExtractor integration working correctly
+
+[6/6] Testing full HiRRA pipeline integration...
+  Initializing HiRRA with graph reasoning...
+[HiRRA] Initializing with config: improved
+[HiRRA] Loading Module 1: Vision Encoder (CTViT)...
+[HiRRA] ✓ Vision Encoder loaded (dim=512)
+[HiRRA] Loading Module 3: Language Decoder (Qwen/Qwen2.5-3B-Instruct)...
+Downloading shards:   0%|          | 0/2 [00:00<?, ?it/s]Downloading shards: 100%|██████████| 2/2 [00:00<00:00, 833.11it/s]
+Loading checkpoint shards:   0%|          | 0/2 [00:00<?, ?it/s]Loading checkpoint shards:  50%|█████     | 1/2 [00:00<00:00,  4.25it/s]Loading checkpoint shards: 100%|██████████| 2/2 [00:00<00:00,  5.04it/s]Loading checkpoint shards: 100%|██████████| 2/2 [00:00<00:00,  4.90it/s]
+[HiRRA] ✓ Language Decoder loaded (bf16, hidden_dim=2048)
+[HiRRA] Loading Module 2: Feature Extractors (improved)...
+[Graph Reasoning] Initialized with config: hierarchical
+[HiRRA] ✓ Feature Extractors loaded:
+        - Multi-scale FPN: True
+        - Sparse Q-Former: False
+        - SPP RoI: True
+        - Graph Reasoning: True
+        - Graph Config: hierarchical
+[HiRRA] Creating Visual Projector (512 -> 2048)...
+[HiRRA] ✓ Visual Projector created
+[HiRRA] ✓ HiRRA initialization complete!
+[HiRRA] Total modules: Vision Encoder + Feature Extractors + Projector + LLM
+  Running prepare_inputs_for_llm...
+  Stitched embeddings: torch.Size([1, 50, 2048])
+  Attention mask: torch.Size([1, 50])
+✓ Full HiRRA pipeline integration working correctly
+
+================================================================================
+ALL TESTS PASSED!
+================================================================================
+
+Graph Reasoning Implementation Summary:
+  ✓ ROIPairGraphBuilder: Constructs graphs with spatial/intensity relations
+  ✓ ROIGraphAttentionNetwork: Basic GNN with 3 GAT layers
+  ✓ HierarchicalROIGraph: Two-level reasoning (ROI + Organ)
+  ✓ Integration: Works with AdvancedFeatureExtractor
+  ✓ Full Pipeline: Compatible with HiRRA main model
+
+Usage Examples:
+  # Basic graph reasoning
+  model = HiRRA(..., use_graph_reasoning=True, graph_config='basic')
+
+  # Hierarchical graph reasoning (FANCY!)
+  model = HiRRA(..., use_graph_reasoning=True, graph_config='hierarchical')
+
+================================================================================
