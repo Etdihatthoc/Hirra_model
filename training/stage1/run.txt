@@ -1,0 +1,97 @@
+/mnt/disk1/anaconda3/envs/RG_DICE/lib/python3.8/site-packages/transformers/utils/hub.py:128: FutureWarning: Using `TRANSFORMERS_CACHE` is deprecated and will be removed in v5 of Transformers. Use `HF_HOME` instead.
+  warnings.warn(
+/mnt/disk1/anaconda3/envs/RG_DICE/lib/python3.8/site-packages/vector_quantize_pytorch/vector_quantize_pytorch.py:261: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  @autocast(enabled = False)
+/mnt/disk1/anaconda3/envs/RG_DICE/lib/python3.8/site-packages/vector_quantize_pytorch/vector_quantize_pytorch.py:391: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  @autocast(enabled = False)
+/mnt/disk1/SonDinh/SonDinh/DICE_model/hirra_model/vision_encoder/multimodal_encoder.py:53: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  pkg = torch.load(checkpoint_path, map_location='cpu')
+train.py:173: FutureWarning: `torch.cuda.amp.GradScaler(args...)` is deprecated. Please use `torch.amp.GradScaler('cuda', args...)` instead.
+  self.scaler = torch.cuda.amp.GradScaler()
+Loading config from: config.yaml
+[Trainer] Using device: cuda
+[Trainer] Creating model...
+[Model] Loading pretrained CTViT from /media/gpus/Data/HF_HOME_DICE/pretrained_models/noise_ctvit.79000.pt
+Đã tải thành công trọng số CT-ViT pretrained từ: /media/gpus/Data/HF_HOME_DICE/pretrained_models/noise_ctvit.79000.pt
+[Model] Converting vision encoder to bfloat16
+[Model] Vision encoder dtype: torch.bfloat16
+[Model] Loading vinai/phobert-base-v2
+[Model] Using 4-bit quantization for text encoder
+[Model] Freezing PhoBERT parameters
+[Model] MedicalCLIP initialized with latent_dim=512
+[Trainer] Đang chuyển vision encoder lên GPU...
+[Trainer] ✓ CT encoder trên: cuda:0
+[Trainer] ✓ PET encoder trên: cuda:0
+[Trainer] ✓ Text encoder trên: cuda:0
+[Trainer] ✓ Vision projection trên: cuda:0
+[Trainer] ✓ Logit scale trên: cuda:0
+[GPU] Bộ nhớ đã dùng: 0.38 GB
+[GPU] Bộ nhớ đã cấp phát: 0.40 GB
+[CẢNH BÁO] ⚠️  GPU memory < 1GB - Model có thể vẫn ở CPU!
+[CẢNH BÁO] ⚠️  Hãy kiểm tra lại device placement!
+[Model] Total params: 212.9M
+[Model] Trainable params: 120.4M
+[Trainer] Creating dataloaders...
+[Dataset] Loaded 2439 samples from /media/gpus/New Volume/ViMed-PET/raw/label/PETCT_parts_train.json
+Created training dataset with 2439 samples.
+[Dataset] Loaded 609 samples from /media/gpus/New Volume/ViMed-PET/raw/label/PETCT_parts_val.json
+Created validation dataset with 609 samples.
+Created training dataloader with 2439 batches.
+Created validation dataloader with 609 batches.
+[DataLoader] Train batches: 2439
+[DataLoader] Val batches: 609
+[Trainer] Creating optimizer...
+[Optimizer] Vision LR: 1.00e-04
+[Optimizer] Text LR: 2.00e-05
+[Scheduler] Warmup steps: 12195
+[Scheduler] Total steps: 121950
+[Trainer] Mixed precision (bf16) enabled
+Starting training...
+======================================================================
+Stage 1: CLIP-style Vision-Text Pretraining
+======================================================================
+Training for 50 epochs
+Effective batch size: 1
+======================================================================
+Epoch 1/50:   0%|          | 0/2439 [00:00<?, ?it/s]train.py:208: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with torch.cuda.amp.autocast(
+Epoch 1/50:   0%|          | 0/2439 [00:17<?, ?it/s]
+[Debug] CT on device: cuda:0
+[Debug] PET on device: cuda:0
+[Debug] CT shape: torch.Size([1, 201, 480, 480])
+[Debug] PET shape: torch.Size([1, 201, 480, 480])
+Traceback (most recent call last):
+  File "train.py", line 431, in <module>
+    main()
+  File "train.py", line 427, in main
+    trainer.train()
+  File "train.py", line 370, in train
+    train_loss = self.train_epoch()
+  File "train.py", line 212, in train_epoch
+    image_embeds, text_embeds, temp = self.model(ct, pet, texts)
+  File "/mnt/disk1/anaconda3/envs/RG_DICE/lib/python3.8/site-packages/torch/nn/modules/module.py", line 1553, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/mnt/disk1/anaconda3/envs/RG_DICE/lib/python3.8/site-packages/torch/nn/modules/module.py", line 1562, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/mnt/disk1/SonDinh/SonDinh/DICE_model/training/stage1/model.py", line 233, in forward
+    image_embeds = self.encode_image(ct, pet)
+  File "/mnt/disk1/SonDinh/SonDinh/DICE_model/training/stage1/model.py", line 170, in encode_image
+    fused = self.vision_encoder(ct, pet)
+  File "/mnt/disk1/anaconda3/envs/RG_DICE/lib/python3.8/site-packages/torch/nn/modules/module.py", line 1553, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/mnt/disk1/anaconda3/envs/RG_DICE/lib/python3.8/site-packages/torch/nn/modules/module.py", line 1562, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/mnt/disk1/SonDinh/SonDinh/DICE_model/hirra_model/vision_encoder/multimodal_encoder.py", line 121, in forward
+    temp_ct = ct_attn_pet(
+  File "/mnt/disk1/anaconda3/envs/RG_DICE/lib/python3.8/site-packages/torch/nn/modules/module.py", line 1553, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/mnt/disk1/anaconda3/envs/RG_DICE/lib/python3.8/site-packages/torch/nn/modules/module.py", line 1562, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/mnt/disk1/SonDinh/SonDinh/DICE_model/hirra_model/vision_encoder/fusion.py", line 87, in forward
+    attn = sim.softmax(dim=-1)
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 4.36 GiB. GPU 0 has a total capacity of 10.75 GiB of which 2.82 GiB is free. Including non-PyTorch memory, this process has 7.90 GiB memory in use. Of the allocated memory 7.66 GiB is allocated by PyTorch, and 64.04 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)
+Exception ignored in: <module 'threading' from '/mnt/disk1/anaconda3/envs/RG_DICE/lib/python3.8/threading.py'>
+Traceback (most recent call last):
+  File "/mnt/disk1/anaconda3/envs/RG_DICE/lib/python3.8/threading.py", line 1388, in _shutdown
+    lock.acquire()
+KeyboardInterrupt: 

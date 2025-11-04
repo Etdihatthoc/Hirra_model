@@ -357,7 +357,7 @@ if __name__ == "__main__":
     batch_size = 2
     input_dim = 512
     d_model = 512
-    T, H, W = 21, 8, 8
+    T, H, W = 21, 24, 24
 
     F_visual = torch.randn(batch_size, input_dim, T, H, W)
     print(f"Input F_visual: {F_visual.shape}")

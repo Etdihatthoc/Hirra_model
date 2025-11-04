@@ -56,7 +56,7 @@ def test_hirra_full_pipeline():
     ctvit_config = dict(
         dim=512,
         codebook_size=8192,
-        image_size=160,
+        image_size=480,
         patch_size=20,
         temporal_patch_size=10,
         spatial_depth=4,
@@ -78,8 +78,8 @@ def test_hirra_full_pipeline():
     # IMPORTANT: Must match CTViT config
     # Formula: T = 1 + (n * temporal_patch_size), H,W must divide by patch_size
     # CTViT extracts first frame separately, so rest frames must divide by temporal_patch_size
-    # 201 = 1 + 200, and 200/10=20 ✓, 160/20=8 ✓
-    original_spatial_dims = (201, 160, 160)  # (T, H, W)
+    # 201 = 1 + 200, and 200/10=20 ✓, 480/20=24 ✓
+    original_spatial_dims = (201, 480, 480)  # (T, H, W)
 
     # Number of query vectors
     num_queries = 32

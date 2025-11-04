@@ -63,8 +63,8 @@ class AdvancedFeatureExtractor(nn.Module):
                  use_multi_scale: bool = True,
                  use_sparse_qformer: bool = True,
                  use_spp_roi: bool = True,
-                 use_graph_reasoning: bool = False,
-                 graph_config: str = 'basic'):
+                 use_graph_reasoning: bool = True,
+                 graph_config: str = 'hierarchical'):
         """
         Args:
             config: 'basic', 'improved', or 'full'
@@ -371,7 +371,7 @@ if __name__ == "__main__":
     # Test data
     batch_size = 2
     d_model = 512
-    T, H, W = 21, 8, 8
+    T, H, W = 21, 24, 24
 
     F_visual = torch.randn(batch_size, d_model, T, H, W)
     boxes_list = [

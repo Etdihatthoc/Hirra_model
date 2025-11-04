@@ -30,119 +30,6 @@ from hirra_model.vision_encoder.attention_helper import Attention, FeedForward, 
 def exists(val):
     return val is not None
 
-
-class ImprovedQFormerBlock(nn.Module):
-    """
-    Full Q-Former Block with Self-Attention and Cross-Attention
-
-    Architecture:
-        Query -> Self-Attention -> Cross-Attention -> FFN -> Output
-                    ↑                  ↑               ↑
-                Residual           Residual        Residual
-    """
-    def __init__(self,
-                 dim: int = 512,
-                 dim_head: int = 64,
-                 heads: int = 8,
-                 ff_mult: int = 4,
-                 dropout: float = 0.0):
-        super().__init__()
-
-        # Self-attention: Queries "talk to each other"
-        self.self_attn = Attention(
-            dim=dim,
-            dim_head=dim_head,
-            heads=heads,
-            causal=False,
-            dropout=dropout
-        )
-
-        # Cross-attention: Queries "read from" visual features
-        self.cross_attn = Attention(
-            dim=dim,
-            dim_head=dim_head,
-            heads=heads,
-            dim_context=dim,  # Context = visual features
-            causal=False,
-            dropout=dropout
-        )
-
-        # Feed-forward network
-        self.ffn = FeedForward(dim=dim, mult=ff_mult, dropout=dropout)
-
-    def forward(self, queries, context, context_mask=None):
-        """
-        Args:
-            queries: [B, num_queries, D]
-            context: [B, N_features, D] - visual features
-            context_mask: [B, N_features] - optional mask for padded features
-
-        Returns:
-            queries: [B, num_queries, D] - updated queries
-        """
-        # Self-attention with residual
-        queries = self.self_attn(queries) + queries
-
-        # Cross-attention with residual
-        queries = self.cross_attn(queries, context=context, mask=context_mask) + queries
-
-        # FFN with residual
-        queries = self.ffn(queries) + queries
-
-        return queries
-
-
-class SparseFeatureSampler(nn.Module):
-    """
-    Sample most important features for efficient processing
-
-    Reduces computation by 4x while maintaining performance
-    """
-    def __init__(self, dim: int = 512, keep_ratio: float = 0.25):
-        super().__init__()
-
-        self.keep_ratio = keep_ratio
-
-        # Learnable importance scorer
-        self.importance_head = nn.Sequential(
-            LayerNorm(dim),
-            nn.Linear(dim, dim // 4),
-            nn.GELU(),
-            nn.Linear(dim // 4, 1)
-        )
-
-    def forward(self, features, deterministic=False):
-        """
-        Args:
-            features: [B, N, D]
-            deterministic: If True, use top-k. If False, use gumbel sampling (training)
-
-        Returns:
-            sampled_features: [B, K, D] where K = N * keep_ratio
-            indices: [B, K] - indices of selected features
-        """
-        B, N, D = features.shape
-        K = max(1, int(N * self.keep_ratio))
-
-        # Compute importance scores
-        scores = self.importance_head(features).squeeze(-1)  # [B, N]
-
-        if deterministic or not self.training:
-            # Top-k sampling (for inference)
-            _, indices = torch.topk(scores, K, dim=-1)  # [B, K]
-        else:
-            # Gumbel-softmax sampling (for training - differentiable)
-            gumbel_noise = -torch.log(-torch.log(torch.rand_like(scores) + 1e-10) + 1e-10)
-            perturbed_scores = scores + gumbel_noise
-            _, indices = torch.topk(perturbed_scores, K, dim=-1)
-
-        # Gather selected features
-        indices_expanded = indices.unsqueeze(-1).expand(-1, -1, D)  # [B, K, D]
-        sampled_features = torch.gather(features, 1, indices_expanded)  # [B, K, D]
-
-        return sampled_features, indices
-
-
 class ImprovedQFormer(nn.Module):
     def __init__(self,
                  input_dim: int = 512,
@@ -260,6 +147,120 @@ class ImprovedQFormer(nn.Module):
         return queries
 
 
+class ImprovedQFormerBlock(nn.Module):
+    """
+    Full Q-Former Block with Self-Attention and Cross-Attention
+
+    Architecture:
+        Query -> Self-Attention -> Cross-Attention -> FFN -> Output
+                    ↑                  ↑               ↑
+                Residual           Residual        Residual
+    """
+    def __init__(self,
+                 dim: int = 512,
+                 dim_head: int = 64,
+                 heads: int = 8,
+                 ff_mult: int = 4,
+                 dropout: float = 0.0):
+        super().__init__()
+
+        # Self-attention: Queries "talk to each other"
+        self.self_attn = Attention(
+            dim=dim,
+            dim_head=dim_head,
+            heads=heads,
+            causal=False,
+            dropout=dropout
+        )
+
+        # Cross-attention: Queries "read from" visual features
+        self.cross_attn = Attention(
+            dim=dim,
+            dim_head=dim_head,
+            heads=heads,
+            dim_context=dim,  # Context = visual features
+            causal=False,
+            dropout=dropout
+        )
+
+        # Feed-forward network
+        self.ffn = FeedForward(dim=dim, mult=ff_mult, dropout=dropout)
+
+    def forward(self, queries, context, context_mask=None):
+        """
+        Args:
+            queries: [B, num_queries, D]
+            context: [B, N_features, D] - visual features
+            context_mask: [B, N_features] - optional mask for padded features
+
+        Returns:
+            queries: [B, num_queries, D] - updated queries
+        """
+        # Self-attention with residual
+        queries = self.self_attn(queries) + queries
+
+        # Cross-attention with residual
+        queries = self.cross_attn(queries, context=context, mask=context_mask) + queries
+
+        # FFN with residual
+        queries = self.ffn(queries) + queries
+
+        return queries
+
+
+class SparseFeatureSampler(nn.Module):
+    """
+    Sample most important features for efficient processing
+
+    Reduces computation by 4x while maintaining performance
+    """
+    def __init__(self, dim: int = 512, keep_ratio: float = 0.25):
+        super().__init__()
+
+        self.keep_ratio = keep_ratio
+
+        # Learnable importance scorer
+        self.importance_head = nn.Sequential(
+            LayerNorm(dim),
+            nn.Linear(dim, dim // 4),
+            nn.GELU(),
+            nn.Linear(dim // 4, 1)
+        )
+
+    def forward(self, features, deterministic=False):
+        """
+        Args:
+            features: [B, N, D]
+            deterministic: If True, use top-k. If False, use gumbel sampling (training)
+
+        Returns:
+            sampled_features: [B, K, D] where K = N * keep_ratio
+            indices: [B, K] - indices of selected features
+        """
+        B, N, D = features.shape
+        K = max(1, int(N * self.keep_ratio))
+
+        # Compute importance scores
+        scores = self.importance_head(features).squeeze(-1)  # [B, N]
+
+        if deterministic or not self.training:
+            # Top-k sampling (for inference)
+            _, indices = torch.topk(scores, K, dim=-1)  # [B, K]
+        else:
+            # Gumbel-softmax sampling (for training - differentiable)
+            gumbel_noise = -torch.log(-torch.log(torch.rand_like(scores) + 1e-10) + 1e-10)
+            perturbed_scores = scores + gumbel_noise
+            _, indices = torch.topk(perturbed_scores, K, dim=-1)
+
+        # Gather selected features
+        indices_expanded = indices.unsqueeze(-1).expand(-1, -1, D)  # [B, K, D]
+        sampled_features = torch.gather(features, 1, indices_expanded)  # [B, K, D]
+
+        return sampled_features, indices
+
+
+
+
 class AdaptiveQuerySelector(nn.Module):
     """
     Dynamically select number of queries based on image complexity
@@ -327,7 +328,7 @@ if __name__ == "__main__":
     # Create dummy input
     batch_size = 2
     d_model = 512
-    T, H, W = 21, 8, 8
+    T, H, W = 21, 24, 24
 
     F_visual = torch.randn(batch_size, d_model, T, H, W)
     print(f"Input F_visual: {F_visual.shape}")

@@ -1,0 +1,234 @@
+"""
+Dataset loader cho preprocessed data (processed_480_npy).
+Giữ nguyên cấu trúc thư mục từ JSON paths.
+"""
+
+import json
+import numpy as np
+import torch
+from torch.utils.data import Dataset, DataLoader
+from pathlib import Path
+
+
+# Mapping body part (tiếng Anh → tiếng Việt)
+BODY_PART_MAPPING = {
+    'abdomen_pelvis': 'Ổ bụng - khung chậu',
+    'chest': 'Lồng ngực',
+    'head_neck': 'Đầu - cổ'
+}
+
+
+class ViMedPETPreprocessedDatasetV2(Dataset):
+    """
+    Dataset cho preprocessed data (processed_480_npy).
+    Đọc paths từ JSON, thay processed_npy → processed_480_npy.
+    """
+
+    def __init__(self, json_path, input_root, output_root, config):
+        """
+        Args:
+            json_path: Path to JSON file (e.g., PETCT_parts_train_val_test.json)
+            input_root: Input root (/media/gpus/New Volume/ViMed-PET/raw)
+            output_root: Output root (/mnt/disk1/.../stage1)
+            config: Data config dict
+        """
+        self.input_root = input_root
+        self.output_root = output_root
+        self.config = config
+
+        # Load JSON metadata
+        with open(json_path, 'r', encoding='utf-8') as f:
+            self.samples = json.load(f)
+
+        print(f"[Dataset] Loaded {len(self.samples)} samples from {json_path}")
+        print(f"[Dataset] Input root: {input_root}")
+        print(f"[Dataset] Output root: {output_root}")
+        print(f"[Dataset] Reading from: processed_480_npy/")
+
+    def _extract_body_part(self, img_path):
+        """Extract body part từ path."""
+        if 'abdomen_pelvis' in img_path:
+            return 'abdomen_pelvis'
+        elif 'chest' in img_path:
+            return 'chest'
+        elif 'head_neck' in img_path:
+            return 'head_neck'
+        return None
+
+    def _extract_text(self, report_path, body_part):
+        """Extract text từ report tương ứng với body part."""
+        report_full_path = f"{self.input_root}/{report_path}"
+
+        with open(report_full_path, 'r', encoding='utf-8') as f:
+            report = json.load(f)
+
+        # Lấy text từ "Mô tả hình ảnh"
+        text_section = report.get('Mô tả hình ảnh', {})
+
+        # Map body part sang tiếng Việt
+        viet_body_part = BODY_PART_MAPPING.get(body_part, '')
+        text = text_section.get(viet_body_part, '')
+
+        # Fallback: nếu không tìm thấy, nối tất cả text
+        if not text and isinstance(text_section, dict):
+            text = " ".join(str(v) for v in text_section.values())
+
+        return text.strip()
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, idx):
+        sample = self.samples[idx]
+
+        # Get paths từ JSON (JSON đã có processed_480_npy)
+        ct_rel_path = sample['ct_img_path']   # processed_480_npy/PETCT_2017/.../ct_...npy
+        pet_rel_path = sample['pet_img_path']  # processed_480_npy/PETCT_2017/.../pet_...npy
+
+        # Full paths cho CT/PET (đã trong processed_480_npy)
+        ct_path = f"{self.output_root}/{ct_rel_path}"
+        pet_path = f"{self.output_root}/{pet_rel_path}"
+
+        # Load preprocessed data (float16 → float32 để tính toán)
+        ct = np.load(ct_path)    # (201, 480, 480) float16
+        pet = np.load(pet_path)  # (201, 480, 480) float16
+
+        # Convert to tensor và cast sang float32 (quan trọng cho training!)
+        ct = torch.from_numpy(ct).float()   # float16 → float32
+        pet = torch.from_numpy(pet).float()  # float16 → float32
+
+        # Extract text matching body part
+        body_part = self._extract_body_part(sample['ct_img_path'])
+
+        # Report path cần thay processed_480_npy → processed_npy (reports ở raw folder)
+        report_rel_path = sample['report_path'].replace('processed_480_npy', 'processed_npy')
+        text = self._extract_text(report_rel_path, body_part)
+
+        return {
+            'ct': ct,           # [201, 480, 480] float32
+            'pet': pet,         # [201, 480, 480] float32
+            'text': text,
+            'id': sample.get('id', idx)
+        }
+
+
+def collate_fn(batch):
+    """
+    Collate function.
+    Data đã ở shape đúng (201, 480, 480), chỉ cần stack.
+    """
+    ct_batch = [item['ct'] for item in batch]
+    pet_batch = [item['pet'] for item in batch]
+
+    return {
+        'ct': torch.stack(ct_batch),           # [B, 201, 480, 480]
+        'pet': torch.stack(pet_batch),         # [B, 201, 480, 480]
+        'text': [item['text'] for item in batch],
+        'id': [item['id'] for item in batch]
+    }
+
+
+def create_dataloaders(config):
+    """
+    Factory function to create dataloaders với preprocessed data v2.
+
+    NOTE:
+    - JSON từ: processed_480_npy/label/PETCT_parts_train_val_test.json
+    - Images từ: processed_480_npy/PETCT_2017/.../ct_....npy (float16)
+    - Reports từ: raw/processed_npy/.../report/....json
+    """
+    # Paths
+    json_path = "/mnt/disk1/SonDinh/SonDinh/DICE_model/training/stage1/processed_480_npy/label/PETCT_parts_train_val_test.json"
+    input_root = "/media/gpus/New Volume/ViMed-PET/raw"  # Cho reports
+    output_root = "/mnt/disk1/SonDinh/SonDinh/DICE_model/training/stage1"  # Cho CT/PET
+
+    print(f"[DataLoader] JSON: {json_path}")
+    print(f"[DataLoader] Reports root: {input_root}")
+    print(f"[DataLoader] Images root: {output_root}")
+
+    # Load full dataset
+    full_ds = ViMedPETPreprocessedDatasetV2(
+        json_path=json_path,
+        input_root=input_root,
+        output_root=output_root,
+        config=config['data']
+    )
+
+    # Split train/val based on split field in JSON
+    train_indices = []
+    val_indices = []
+
+    # Check if JSON has 'split' field
+    has_split_field = 'split' in full_ds.samples[0] if len(full_ds.samples) > 0 else False
+
+    if has_split_field:
+        print("[DataLoader] Using 'split' field from JSON")
+        for idx, sample in enumerate(full_ds.samples):
+            split = sample.get('split', 'train')
+            if split == 'train':
+                train_indices.append(idx)
+            elif split in ['val', 'validation']:
+                val_indices.append(idx)
+    else:
+        # JSON không có split field, chia 80/20
+        print("[DataLoader] ⚠️  JSON không có field 'split', chia 80/20")
+        num_train = int(0.8 * len(full_ds))
+        train_indices = list(range(num_train))
+        val_indices = list(range(num_train, len(full_ds)))
+        print(f"[DataLoader] Auto-split: {num_train} train, {len(full_ds) - num_train} val")
+
+    # Create subsets
+    from torch.utils.data import Subset
+    train_ds = Subset(full_ds, train_indices)
+    val_ds = Subset(full_ds, val_indices)
+
+    print(f"[DataLoader] Train dataset: {len(train_ds)} samples")
+    print(f"[DataLoader] Val dataset: {len(val_ds)} samples")
+
+    # Training dataloader
+    train_loader = DataLoader(
+        train_ds,
+        batch_size=config['training']['batch_size'],
+        shuffle=True,
+        num_workers=config['data']['num_workers'],
+        collate_fn=collate_fn,
+        pin_memory=True,
+        persistent_workers=True,
+        prefetch_factor=4,
+        drop_last=True
+    )
+
+    # Validation dataloader
+    val_loader = DataLoader(
+        val_ds,
+        batch_size=config['training']['batch_size'],
+        shuffle=False,
+        num_workers=config['data']['num_workers'],
+        collate_fn=collate_fn,
+        pin_memory=True,
+        persistent_workers=True,
+        prefetch_factor=4
+    )
+
+    print(f"[DataLoader] Train batches: {len(train_loader)}")
+    print(f"[DataLoader] Val batches: {len(val_loader)}")
+
+    return train_loader, val_loader
+
+
+if __name__ == '__main__':
+    # Test
+    import yaml
+
+    with open('config.yaml') as f:
+        config = yaml.safe_load(f)
+
+    train_loader, val_loader = create_dataloaders(config)
+
+    print("\n[Test] Loading first batch...")
+    batch = next(iter(train_loader))
+    print(f"CT shape: {batch['ct'].shape}")
+    print(f"PET shape: {batch['pet'].shape}")
+    print(f"Text: {batch['text'][0][:100]}...")
+    print(f"IDs: {batch['id']}")
+    print("\n✓ Dataset test passed!")

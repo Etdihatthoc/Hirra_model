@@ -31,22 +31,34 @@ def test_vision_encoder():
     # LƯU Ý QUAN TRỌNG:
     # - Config phải KHỚP CHÍNH XÁC với checkpoint để load được pretrained weights
     # - patch_size=20, temporal_patch_size=10 (khác với train_ctvit.py mặc định)
-    # - image_size=160 (vì 160 chia hết cho patch_size=20)
+    # - image_size=480 (vì 480 chia hết cho patch_size=20)
+    # ctvit_config = dict(
+    #     dim=512,
+    #     codebook_size=8192,
+    #     image_size=160,  # Thay đổi từ 128 → 480 để match với checkpoint
+    #     patch_size=20,   # Thay đổi từ 16 → 20 để match với checkpoint
+    #     temporal_patch_size=10,  # Thay đổi từ 2 → 10 để match với checkpoint
+    #     spatial_depth=4,
+    #     temporal_depth=4,
+    #     dim_head=32,
+    #     heads=8,
+    #     channels=1  # Grayscale CT/PET
+    # )
+    
     ctvit_config = dict(
-        dim=512,
-        codebook_size=8192,
-        image_size=160,  # Thay đổi từ 128 → 160 để match với checkpoint
-        patch_size=20,   # Thay đổi từ 16 → 20 để match với checkpoint
-        temporal_patch_size=10,  # Thay đổi từ 2 → 10 để match với checkpoint
-        spatial_depth=4,
-        temporal_depth=4,
-        dim_head=32,
-        heads=8,
-        channels=1  # Grayscale CT/PET
-    )
+            dim = 512,
+            codebook_size = 8192,
+            image_size = 480,
+            patch_size = 20,
+            temporal_patch_size = 10,
+            spatial_depth = 4,
+            temporal_depth = 4,
+            dim_head = 32,
+            heads = 8
+        )
 
     # 2. Khởi tạo MultimodalEncoder và chuyển lên GPU
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    device = 'cpu' #torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Sử dụng device: {device}")
 
     try:
@@ -70,13 +82,13 @@ def test_vision_encoder():
     BATCH_SIZE = 2
     CHANNELS = 1
     FRAMES = 201  # (1 frame đầu + 20 * 10 frame patch)
-    HEIGHT = 160  # Thay đổi từ 128 → 160 để match với image_size
-    WIDTH = 160   # Thay đổi từ 128 → 160 để match với image_size
+    HEIGHT = 480  # Thay đổi từ 128 → 480 để match với image_size
+    WIDTH = 480   # Thay đổi từ 128 → 480 để match với image_size
 
     # 5. Tạo dữ liệu giả và chuyển lên GPU
     # Lưu ý: Dữ liệu thật của bạn cần resize về shape này trong Dataloader:
-    # - CT:  (313, 512, 512) → (201, 160, 160)
-    # - PET: (313, 256, 256) → (201, 160, 160)
+    # - CT:  (313, 512, 512) → (201, 480, 480)
+    # - PET: (313, 256, 256) → (201, 480, 480)
     fake_ct_image = torch.randn(BATCH_SIZE, CHANNELS, FRAMES, HEIGHT, WIDTH).to(device)
     fake_pet_image = torch.randn(BATCH_SIZE, CHANNELS, FRAMES, HEIGHT, WIDTH).to(device)
 
@@ -98,15 +110,15 @@ def test_vision_encoder():
     # 7. Kiểm tra (Assert) shape của F_visual
     # D (dim): 512
     # T (time_patches): 1 + (200 / 10) = 21  # Thay đổi: temporal_patch_size=10
-    # H' (height_patches): 160 / 20 = 8
-    # W' (width_patches): 160 / 20 = 8
+    # H' (height_patches): 480 / 20 = 24
+    # W' (width_patches): 480 / 20 = 24
     # Shape mong đợi: [B, D, T, H', W']
-    expected_shape = (BATCH_SIZE, 512, 21, 8, 8)  # Thay đổi T: 101 → 21
+    expected_shape = (BATCH_SIZE, 512, 21, 24, 24)  # Thay đổi T: 101 → 21
 
     print(f"      Shape đầu vào: {fake_ct_image.shape}")
     print(f"      Shape đầu ra F_visual: {F_visual.shape}")
     print(f"      Shape mong đợi: {expected_shape}")
-    print(f"      Đầu ra: {F_visual}")
+    #print(f"      Đầu ra: {F_visual}")
 
     assert F_visual.shape == expected_shape, \
         f"Test Thất Bại! Shape đầu ra là {F_visual.shape}, \

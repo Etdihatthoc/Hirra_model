@@ -223,7 +223,7 @@ if __name__ == "__main__":
     # Test FPN
     batch_size = 2
     input_dim = 512
-    T, H, W = 21, 8, 8
+    T, H, W = 21, 24, 24
 
     # Create dummy input
     F_visual = torch.randn(batch_size, input_dim, T, H, W)

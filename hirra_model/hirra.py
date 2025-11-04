@@ -51,7 +51,7 @@ class HiRRA(nn.Module):
                  num_queries: int = 32,
                  language_decoder_4bit: bool = False,
                  language_decoder_kwargs: Optional[Dict] = None,
-                 use_graph_reasoning: bool = False,
+                 use_graph_reasoning: bool = True,
                  graph_config: str = 'basic'):
         """
         Khởi tạo HiRRA model
