@@ -2,10 +2,10 @@
 
 # Dataset
 data:
-  root_dir: "/mnt/disk1/SonDinh/SonDinh/DICE_model/training/stage1/processed_480_npy"
+  root_dir: "/media/gpus/New Volume/processed_480_npy"
   train_json: "label/PETCT_parts_train.json"       # 2,439 samples
   val_json: "label/PETCT_parts_val.json"           # 609 samples
-  spatial_size: 480                                 # Resize to 480x480
+  spatial_size: 480                                 # Resize to 320x320 (giảm từ 480 để tiết kiệm VRAM)
   depth_strategy: "variable"                        # Keep variable depth, pad in collate
   normalize_by: 32767.0                             # Normalization divisor
   num_workers: 8                                   # DataLoader workers (tăng để giảm bottleneck)
@@ -17,6 +17,7 @@ model:
   ctvit_patch_size: 20
   ctvit_temporal_patch_size: 10
   num_fusion_layers: 4                              # CT-PET cross-attention layers
+  fusion_heads: 8                                   # Attention heads cho fusion layers (giảm từ 8 để tiết kiệm VRAM)
   pretrained_ctvit: "/media/gpus/Data/HF_HOME_DICE/pretrained_models/noise_ctvit.79000.pt"                            # Path to pretrained CTViT (optional)
   vision_dtype: "bfloat16"                          # Use bfloat16 for vision encoder (match với mixed_precision)
 
@@ -24,6 +25,7 @@ model:
   phobert_model: "vinai/phobert-base-v2"            # Vietnamese BERT (135M params)
   freeze_phobert: true                              # Freeze PhoBERT (not trainable)
   load_text_in_4bit: true                          # Use 4-bit quantization to save GPU memory
+  load_text_in_8bit: false
 
   # Projection heads
   latent_dim: 512                                   # Shared latent space dimension

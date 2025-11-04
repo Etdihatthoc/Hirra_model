@@ -92,7 +92,17 @@ class MedicalCLIP(nn.Module):
         print(f"[Model] Loading {config['model']['phobert_model']}")
 
         text_model_kwargs = {}
-        if config['model'].get('load_text_in_4bit', False):
+        load_text_in_4bit = config['model'].get('load_text_in_4bit', False)
+        load_text_in_8bit = config['model'].get('load_text_in_8bit', False)
+
+        if load_text_in_4bit and load_text_in_8bit:
+            raise ValueError("Both load_text_in_4bit and load_text_in_8bit are set; please enable only one.")
+
+        if load_text_in_4bit:
+            if BitsAndBytesConfig is None:
+                raise ImportError(
+                    "BitsAndBytesConfig not available. Install bitsandbytes and transformers>=4.30 to use 4-bit loading."
+                )
             print("[Model] Using 4-bit quantization for text encoder")
             quant_config = BitsAndBytesConfig(
                 load_in_4bit=True,
@@ -102,6 +112,16 @@ class MedicalCLIP(nn.Module):
             )
             text_model_kwargs.update({
                 "quantization_config": quant_config,
+                "device_map": "auto",
+            })
+        elif load_text_in_8bit:
+            if BitsAndBytesConfig is None:
+                raise ImportError(
+                    "BitsAndBytesConfig not available. Install bitsandbytes and transformers>=4.30 to use 8-bit loading."
+                )
+            print("[Model] Using 8-bit quantization for text encoder")
+            text_model_kwargs.update({
+                "load_in_8bit": True,
                 "device_map": "auto",
             })
 
@@ -208,6 +228,10 @@ class MedicalCLIP(nn.Module):
         # [B, seq_len, 768] → [B, 768]
         pooled = outputs.last_hidden_state.mean(dim=1)
 
+        # Convert to float32 để match với text_proj dtype
+        # (PhoBERT với 4-bit quantization output float16)
+        pooled = pooled.float()
+
         # Project to latent space
         projected = self.text_proj(pooled)  # [B, latent_dim]
 
@@ -291,12 +315,17 @@ if __name__ == '__main__':
     model = MedicalCLIP(config).cuda()
 
     # Test forward
+    # Batch size phải khớp với số texts trong CLIP
     batch_size = 1
-    ct = torch.randn(batch_size, 201, 480, 480).cuda()
-    pet = torch.randn(batch_size, 201, 480, 480).cuda()
-    texts = ["Hình ảnh bắt xạ theo đặc điểm sinh lý ở gan, lách.",
-             "Tổn thương tăng chuyển hóa FDG vùng ngực."]
+    ct = torch.randn(batch_size, 201, 480, 480).cuda().half()
+    pet = torch.randn(batch_size, 201, 480, 480).cuda().half()
 
+    texts = ["Hình ảnh bắt xạ theo đặc điểm sinh lý ở gan, lách."]
+    
+    print(f"Total parameters: {sum(p.numel() for p in model.parameters())}")
+    print(f"Trainable parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
+    
+    
     image_embeds, text_embeds, temp = model(ct, pet, texts)
 
     print(f"Image embeddings: {image_embeds.shape}")
@@ -305,4 +334,4 @@ if __name__ == '__main__':
 
     # Test loss
     loss = clip_loss(image_embeds, text_embeds, temp)
-    print(f"CLIP loss: {loss.item():.4f}")
+    print(f"CLIP loss: {loss.item():.6f}")

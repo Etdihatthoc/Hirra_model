@@ -168,10 +168,11 @@ class Trainer:
         print(f"[Scheduler] Total steps: {total_steps}")
 
         # ==================== Mixed Precision ====================
+        # Note: GradScaler is NOT needed for BFloat16 (only for Float16)
+        # BFloat16 has the same dynamic range as FP32, so no scaling needed
         self.scaler = None
         if config['mixed_precision']:
-            self.scaler = torch.cuda.amp.GradScaler()
-            print("[Trainer] Mixed precision (bf16) enabled")
+            print("[Trainer] Mixed precision (bf16) enabled - GradScaler disabled for BFloat16")
 
         # ==================== State ====================
         self.epoch = 0
@@ -205,14 +206,15 @@ class Trainer:
                 assert (ct.shape[1] - 1) % 10 == 0, f"(depth-1) must be divisible by 10"
 
             # Forward pass với mixed precision
-            with torch.cuda.amp.autocast(
+            with torch.amp.autocast(
+                device_type='cuda',
                 enabled=self.config['mixed_precision'],
                 dtype=torch.bfloat16
             ):
                 image_embeds, text_embeds, temp = self.model(ct, pet, texts)
                 loss = clip_loss(image_embeds, text_embeds, temp)
                 loss = loss / grad_accum  # Scale loss for gradient accumulation
-
+            print(f"[Trainer] Loss before backward: {loss.item():.6f}")
             # Backward pass
             if self.scaler:
                 self.scaler.scale(loss).backward()
@@ -252,6 +254,7 @@ class Trainer:
                     })
 
             # Update progress bar
+            print(f"[Trainer] Step {step}/{len(self.train_loader)} - Loss: {loss.item():.6f} - Temp: {temp.item():.3f} - LR: {self.optimizer.param_groups[0]['lr']:.2e}")
             total_loss += loss.item() * grad_accum
             pbar.set_postfix({
                 'loss': f"{loss.item() * grad_accum:.4f}",
@@ -285,7 +288,8 @@ class Trainer:
             pet = batch['pet'].to(self.device, non_blocking=True)
             texts = batch['text']
 
-            with torch.cuda.amp.autocast(
+            with torch.amp.autocast(
+                device_type='cuda',
                 enabled=self.config['mixed_precision'],
                 dtype=torch.bfloat16
             ):

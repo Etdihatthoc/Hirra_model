@@ -57,7 +57,7 @@ class ViMedPETPreprocessedDatasetV2(Dataset):
 
     def _extract_text(self, report_path, body_part):
         """Extract text từ report tương ứng với body part."""
-        report_full_path = f"{self.input_root}/{report_path}"
+        report_full_path = report_path #f"{self.input_root}/{report_path}"
 
         with open(report_full_path, 'r', encoding='utf-8') as f:
             report = json.load(f)
@@ -101,7 +101,7 @@ class ViMedPETPreprocessedDatasetV2(Dataset):
         body_part = self._extract_body_part(sample['ct_img_path'])
 
         # Report path cần thay processed_480_npy → processed_npy (reports ở raw folder)
-        report_rel_path = sample['report_path'].replace('processed_480_npy', 'processed_npy')
+        report_rel_path = "/media/gpus/New Volume/processed_480_npy/patient_117.json"#sample['report_path'].replace('processed_480_npy', 'processed_npy')
         text = self._extract_text(report_rel_path, body_part)
 
         return {
