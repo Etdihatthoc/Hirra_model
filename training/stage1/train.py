@@ -23,7 +23,7 @@ import wandb
 from dataset_v2 import create_dataloaders
 #from dataset import create_dataloaders
 from model import MedicalCLIP, clip_loss
-
+import bitsandbytes as bnb
 
 class Trainer:
     """Main trainer class với Wandb integration."""
@@ -51,6 +51,9 @@ class Trainer:
         # ==================== Model ====================
         print("[Trainer] Creating model...")
         self.model = MedicalCLIP(config)
+        
+        # Load pretrained weights if specified
+        
 
         # Move model to device (handle 4-bit text encoder)
         if config['model'].get('load_text_in_4bit', False):
@@ -96,8 +99,9 @@ class Trainer:
             print(f"[Trainer] ✓ Model đã chuyển lên: {self.device}")
 
         # Wandb watch model (track gradients and parameters)
-        if config['wandb']['enabled']:
-            wandb.watch(self.model, log='all', log_freq=10)
+        # DISABLED: log='all' causes severe performance degradation
+        # if config['wandb']['enabled']:
+        #     wandb.watch(self.model, log='gradients', log_freq=100)
 
         # Count parameters
         total_params = sum(p.numel() for p in self.model.parameters())
@@ -113,33 +117,55 @@ class Trainer:
         print("[Trainer] Creating optimizer...")
 
         # Separate param groups với layered LRs
-        vision_params = (
-            list(self.model.vision_encoder.parameters()) +
-            list(self.model.vision_proj.parameters())
-        )
-        text_params = (
-            list(self.model.text_encoder.parameters()) +
-            list(self.model.text_proj.parameters())
-        )
+        # IMPORTANT: Only include trainable parameters (filter frozen ones)
+        vision_params = [p for p in self.model.vision_encoder.parameters() if p.requires_grad]
+        vision_params += [p for p in self.model.vision_proj.parameters() if p.requires_grad]
 
-        self.optimizer = AdamW([
-            {
-                'params': vision_params,
-                'lr': config['training']['lr_vision'],
-                'name': 'vision'
-            },
-            {
-                'params': text_params,
-                'lr': config['training']['lr_text'],
-                'name': 'text'
-            },
-            {
-                'params': [self.model.logit_scale],
-                'lr': config['training']['lr_vision'],
-                'name': 'temperature'
-            }
-        ], weight_decay=config['training']['weight_decay'])
+        text_params = [p for p in self.model.text_encoder.parameters() if p.requires_grad]
+        text_params += [p for p in self.model.text_proj.parameters() if p.requires_grad]
 
+        # Count trainable params per group
+        vision_trainable = sum(p.numel() for p in vision_params)
+        text_trainable = sum(p.numel() for p in text_params)
+        print(f"[Optimizer] Vision trainable params: {vision_trainable / 1e6:.1f}M")
+        print(f"[Optimizer] Text trainable params: {text_trainable / 1e6:.1f}M")
+
+        # self.optimizer = AdamW([
+        #     {
+        #         'params': vision_params,
+        #         'lr': config['training']['lr_vision'],
+        #         'name': 'vision'
+        #     },
+        #     {
+        #         'params': text_params,
+        #         'lr': config['training']['lr_text'],
+        #         'name': 'text'
+        #     },
+        #     {
+        #         'params': [self.model.logit_scale],
+        #         'lr': config['training']['lr_vision'],
+        #         'name': 'temperature'
+        #     }
+        # ], weight_decay=config['training']['weight_decay'])
+        
+        # Build optimizer param groups
+        param_groups = [
+            {'params': vision_params, 'lr': config['training']['lr_vision'], 'name': 'vision'},
+            {'params': [self.model.logit_scale], 'lr': config['training']['lr_vision'], 'name': 'temperature'}
+        ]
+
+        # Only add text params if there are any trainable (PhoBERT might be frozen)
+        if len(text_params) > 0:
+            param_groups.append({'params': text_params, 'lr': config['training']['lr_text'], 'name': 'text'})
+            print(f"[Optimizer] Text params INCLUDED (unfrozen)")
+        else:
+            print(f"[Optimizer] Text params EXCLUDED (all frozen)")
+
+        self.optimizer = bnb.optim.AdamW8bit(
+            param_groups,
+            weight_decay=config['training']['weight_decay']
+        )
+        
         print(f"[Optimizer] Vision LR: {config['training']['lr_vision']:.2e}")
         print(f"[Optimizer] Text LR: {config['training']['lr_text']:.2e}")
 
@@ -172,15 +198,23 @@ class Trainer:
         # BFloat16 has the same dynamic range as FP32, so no scaling needed
         self.scaler = None
         if config['mixed_precision']:
+            #self.scaler = torch.amp.GradScaler()
             print("[Trainer] Mixed precision (bf16) enabled - GradScaler disabled for BFloat16")
 
         # ==================== State ====================
         self.epoch = 0
         self.global_step = 0
         self.best_val_loss = float('inf')
+        self.start_epoch = 0
 
         # Create checkpoint directory
         os.makedirs(config['training']['checkpoint_dir'], exist_ok=True)
+
+        # ==================== Resume (optional) ====================
+        resume_path = self.config['training'].get('resume_from')
+        if resume_path:
+            resume_path = os.path.expanduser(resume_path)
+            self.load_checkpoint(resume_path)
 
     def train_epoch(self):
         """Train một epoch."""
@@ -214,12 +248,55 @@ class Trainer:
                 image_embeds, text_embeds, temp = self.model(ct, pet, texts)
                 loss = clip_loss(image_embeds, text_embeds, temp)
                 loss = loss / grad_accum  # Scale loss for gradient accumulation
-            print(f"[Trainer] Loss before backward: {loss.item():.6f}")
+
             # Backward pass
             if self.scaler:
                 self.scaler.scale(loss).backward()
             else:
                 loss.backward()
+
+            # Gradient checking (first batch of first epoch)
+            if self.epoch == 1 and step == 0:
+                print("\n[Gradient Check] Verifying gradient flow...")
+                grad_info = []
+
+                # Check vision encoder
+                vision_grads = [p.grad for p in self.model.vision_encoder.parameters() if p.grad is not None]
+                if vision_grads:
+                    avg_grad = torch.stack([g.abs().mean() for g in vision_grads]).mean().item()
+                    grad_info.append(f"Vision encoder: {len(vision_grads)} params with grad (avg: {avg_grad:.2e})")
+                else:
+                    grad_info.append("Vision encoder: NO GRADIENTS!")
+
+                # Check text encoder
+                text_grads = [p.grad for p in self.model.text_encoder.parameters() if p.grad is not None]
+                if text_grads:
+                    avg_grad = torch.stack([g.abs().mean() for g in text_grads]).mean().item()
+                    grad_info.append(f"Text encoder: {len(text_grads)} params with grad (avg: {avg_grad:.2e})")
+                else:
+                    grad_info.append("Text encoder: FROZEN (expected if freeze_phobert=true)")
+
+                # Check projection heads
+                vision_proj_grads = [p.grad for p in self.model.vision_proj.parameters() if p.grad is not None]
+                text_proj_grads = [p.grad for p in self.model.text_proj.parameters() if p.grad is not None]
+                if vision_proj_grads:
+                    avg_grad = torch.stack([g.abs().mean() for g in vision_proj_grads]).mean().item()
+                    grad_info.append(f"Vision proj: {len(vision_proj_grads)} params (avg: {avg_grad:.2e})")
+                if text_proj_grads:
+                    avg_grad = torch.stack([g.abs().mean() for g in text_proj_grads]).mean().item()
+                    grad_info.append(f"Text proj: {len(text_proj_grads)} params (avg: {avg_grad:.2e})")
+
+                # Check logit_scale
+                if self.model.logit_scale.grad is not None:
+                    grad_info.append(f"Logit scale: grad={self.model.logit_scale.grad.item():.2e}")
+                else:
+                    grad_info.append("Logit scale: NO GRADIENT!")
+
+                print("\n".join(grad_info))
+                print("[Gradient Check] Done!\n")
+
+            # if step % 10 == 0:  # Clear mỗi 10 steps
+            #     torch.cuda.empty_cache()
 
             # Optimizer step (mỗi grad_accum steps)
             if (step + 1) % grad_accum == 0:
@@ -243,8 +320,8 @@ class Trainer:
                 self.scheduler.step()
                 self.global_step += 1
 
-                # Wandb logging (step-level)
-                if self.config['wandb']['enabled']:
+                # Wandb logging (step-level) - Log mỗi 50 steps để tránh network bottleneck
+                if self.config['wandb']['enabled'] and self.global_step % 10 == 0:
                     wandb.log({
                         'train/loss': loss.item() * grad_accum,
                         'train/temperature': temp.item(),
@@ -253,8 +330,7 @@ class Trainer:
                         'train/global_step': self.global_step
                     })
 
-            # Update progress bar
-            print(f"[Trainer] Step {step}/{len(self.train_loader)} - Loss: {loss.item():.6f} - Temp: {temp.item():.3f} - LR: {self.optimizer.param_groups[0]['lr']:.2e}")
+            # Update progress bar (no print to avoid I/O blocking)
             total_loss += loss.item() * grad_accum
             pbar.set_postfix({
                 'loss': f"{loss.item() * grad_accum:.4f}",
@@ -358,6 +434,47 @@ class Trainer:
             artifact.add_file(path)
             wandb.log_artifact(artifact)
 
+    def load_checkpoint(self, path):
+        """Resume full training state from a checkpoint."""
+        if not os.path.isfile(path):
+            raise FileNotFoundError(f"Checkpoint not found: {path}")
+
+        print(f"[Trainer] Loading checkpoint from: {path}")
+        checkpoint = torch.load(path, map_location='cpu')
+
+        incompat = self.model.load_state_dict(checkpoint['model_state_dict'], strict=False)
+        if incompat.missing_keys or incompat.unexpected_keys:
+            print("[Trainer] Warning: checkpoint/model mismatch detected")
+            if incompat.missing_keys:
+                print(f"  Missing keys: {incompat.missing_keys}")
+            if incompat.unexpected_keys:
+                print(f"  Unexpected keys: {incompat.unexpected_keys}")
+
+        optimizer_state = checkpoint.get('optimizer_state_dict')
+        if optimizer_state is not None:
+            self.optimizer.load_state_dict(optimizer_state)
+            self._move_optimizer_state_to_device()
+
+        scheduler_state = checkpoint.get('scheduler_state_dict')
+        if scheduler_state is not None:
+            self.scheduler.load_state_dict(scheduler_state)
+
+        self.start_epoch = checkpoint.get('epoch', 0)
+        self.epoch = self.start_epoch
+        self.global_step = checkpoint.get('global_step', self.global_step)
+        self.best_val_loss = checkpoint.get('best_val_loss', self.best_val_loss)
+
+        print(f"[Trainer] Resumed from epoch {self.start_epoch} (global step {self.global_step})")
+
+    def _move_optimizer_state_to_device(self):
+        """Ensure optimizer state tensors live on the right device after loading."""
+        if not torch.cuda.is_available():
+            return
+        for state in self.optimizer.state.values():
+            for key, value in state.items():
+                if isinstance(value, torch.Tensor):
+                    state[key] = value.to(self.device)
+
     def train(self):
         """Main training loop."""
         print("=" * 70)
@@ -367,11 +484,17 @@ class Trainer:
         print(f"Effective batch size: {self.config['training']['batch_size'] * self.config['training']['grad_accum']}")
         print("=" * 70)
 
-        for epoch in range(self.config['training']['epochs']):
+        if self.start_epoch >= self.config['training']['epochs']:
+            print("[Trainer] Checkpoint already completed the requested epochs. Nothing to train.")
+            return
+
+        for epoch in range(self.start_epoch, self.config['training']['epochs']):
             self.epoch = epoch + 1
 
             # Train
             train_loss = self.train_epoch()
+
+            #torch.cuda.empty_cache()
 
             # Validate
             val_loss, r1_i2t, r1_t2i = self.validate()
@@ -409,16 +532,25 @@ class Trainer:
 
 
 def main():
+    
+    # torch.backends.cudnn.benchmark = False  # Tắt auto-tuning
+    # torch.backends.cudnn.deterministic = True
     """Main entry point."""
     parser = argparse.ArgumentParser(description="Stage 1 CLIP Training")
     parser.add_argument('--config', type=str, default='config.yaml',
                         help='Path to config file')
+    parser.add_argument('--resume', type=str, default=None,
+                        help='Optional checkpoint path to resume from (overrides config)')
     args = parser.parse_args()
 
     # Load config
     print(f"Loading config from: {args.config}")
     with open(args.config) as f:
         config = yaml.safe_load(f)
+
+    if args.resume:
+        config.setdefault('training', {})
+        config['training']['resume_from'] = args.resume
 
     # Set seed
     torch.manual_seed(config['seed'])

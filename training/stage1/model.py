@@ -63,9 +63,13 @@ class MedicalCLIP(nn.Module):
             'heads': 8
         }
 
+        # Get gradient checkpointing setting from config (default: True)
+        use_gradient_checkpointing = config['model'].get('use_gradient_checkpointing', True)
+
         self.vision_encoder = MultimodalEncoder(
             ctvit_config=ctvit_config,
-            num_fusion_layers=config['model']['num_fusion_layers']
+            num_fusion_layers=config['model']['num_fusion_layers'],
+            use_gradient_checkpointing=use_gradient_checkpointing
         )
 
         # Load pretrained CTViT nếu có

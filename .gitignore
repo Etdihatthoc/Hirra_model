@@ -2,3 +2,5 @@ id_ed25519_DICE
 id_ed25519_DICE.pub
 training/stage1/processed_480_npy
 training/stage1/__pycache__
+training/stage1/checkpoints
+training/stage1/wandb

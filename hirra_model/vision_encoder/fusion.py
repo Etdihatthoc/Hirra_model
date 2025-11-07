@@ -4,7 +4,7 @@ from einops import rearrange, repeat
 
 # Import LayerNorm từ file helper chúng ta đã tạo
 from .attention_helper import LayerNorm
-
+from torch.nn.functional import scaled_dot_product_attention
 def exists(val):
     return val is not None
 
@@ -77,17 +77,21 @@ class CrossAttentionLayer(nn.Module):
         # Tách thành các 'heads'
         q, k, v = rearrange_many((q, k, v), 'b n (h d) -> b h n d', h=self.heads)
 
-        # Tính toán Attention (Dot-product)
-        sim = einsum('b h i d, b h j d -> b h i j', q, k) * self.scale
-
+        # Sử dụng Flash Attention 2 (scaled_dot_product_attention)
+        # Tiết kiệm memory ~3-4x so với vanilla attention
+        attn_mask = None
         if exists(mask):
-            mask = rearrange(mask, 'b j -> b 1 1 j')
-            sim = sim.masked_fill(~mask, -torch.finfo(sim.dtype).max)
+            # Reshape mask cho SDPA: [B, 1, 1, seq_len]
+            attn_mask = rearrange(mask, 'b j -> b 1 1 j')
 
-        attn = sim.softmax(dim=-1)
-
-        # Tổng hợp 'value'
-        out = einsum('b h i j, b h j d -> b h i d', attn, v)
+        # Flash Attention with memory-efficient kernel
+        out = scaled_dot_product_attention(
+            q, k, v,
+            attn_mask=attn_mask,
+            dropout_p=0.0,
+            is_causal=False,
+            scale=self.scale
+        )
 
         # Gộp các 'heads' lại
         out = rearrange(out, 'b h n d -> b n (h d)')

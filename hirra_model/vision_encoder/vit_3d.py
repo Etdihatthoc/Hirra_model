@@ -7,6 +7,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn, einsum
 from torch.autograd import grad as torch_grad
+from torch.utils.checkpoint import checkpoint
 from torchvision import transforms as T, utils
 
 
@@ -28,6 +29,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn, einsum
 from torch.autograd import grad as torch_grad
+from torch.utils.checkpoint import checkpoint
 from torchvision import transforms as T, utils
 
 
@@ -266,7 +268,8 @@ class CTViT(nn.Module):
         discr_attn_res_layers = (16,),
         use_hinge_loss = True,
         attn_dropout = 0.,
-        ff_dropout = 0.
+        ff_dropout = 0.,
+        use_gradient_checkpointing = True
     ):
         """
         einstein notations:
@@ -285,6 +288,7 @@ class CTViT(nn.Module):
         patch_height, patch_width = self.patch_size
 
         self.temporal_patch_size = temporal_patch_size
+        self.use_gradient_checkpointing = use_gradient_checkpointing
 
         self.spatial_rel_pos_bias = ContinuousPositionBias(dim = dim, heads = heads)
 
@@ -452,7 +456,16 @@ class CTViT(nn.Module):
         device = tokens.device  # Lấy device từ tokens
         attn_bias = self.spatial_rel_pos_bias(h, w, device = device)
 
-        tokens = self.enc_spatial_transformer(tokens, attn_bias = attn_bias, video_shape = video_shape)
+        # Spatial transformer with gradient checkpointing
+        if self.training and self.use_gradient_checkpointing:
+            # Use lambda to ensure keyword arguments are passed correctly
+            tokens = checkpoint(
+                lambda t: self.enc_spatial_transformer(t, attn_bias=attn_bias, video_shape=video_shape),
+                tokens,
+                use_reentrant=False
+            )
+        else:
+            tokens = self.enc_spatial_transformer(tokens, attn_bias = attn_bias, video_shape = video_shape)
 
         tokens = rearrange(tokens, '(b t) (h w) d -> b t h w d', b = b, h = h , w = w)
 
@@ -460,7 +473,16 @@ class CTViT(nn.Module):
 
         tokens = rearrange(tokens, 'b t h w d -> (b h w) t d')
 
-        tokens = self.enc_temporal_transformer(tokens, video_shape = video_shape)
+        # Temporal transformer with gradient checkpointing
+        if self.training and self.use_gradient_checkpointing:
+            # Use lambda to ensure keyword arguments are passed correctly
+            tokens = checkpoint(
+                lambda t: self.enc_temporal_transformer(t, video_shape=video_shape),
+                tokens,
+                use_reentrant=False
+            )
+        else:
+            tokens = self.enc_temporal_transformer(tokens, video_shape = video_shape)
 
         tokens = rearrange(tokens, '(b h w) t d -> b t h w d', b = b, h = h, w = w)
 

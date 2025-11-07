@@ -211,7 +211,7 @@ import json
 
 RAW_ROOT = Path("/media/gpus/Do not enter/ViMed-PET")
 TEMP_ROOT = Path("/mnt/disk1/SonDinh/SonDinh")
-DEST_ROOT = Path("/media/gpus/New Volume/processed_480_npy")
+DEST_ROOT = Path("/mnt/disk1/SonDinh/SonDinh/DICE_model/training/stage1/processed_480_npy")
 
 DEST_ROOT.mkdir(parents=True, exist_ok=True)
 TEMP_ROOT.mkdir(parents=True, exist_ok=True)

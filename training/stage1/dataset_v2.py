@@ -103,7 +103,8 @@ class ViMedPETPreprocessedDatasetV2(Dataset):
         # Report path cần thay processed_480_npy → processed_npy (reports ở raw folder)
         report_rel_path = sample['report_path']
         text = self._extract_text(report_rel_path, body_part)
-
+        # print(f"[Dataset] Input text: {text[:100]}...")  # In 100 ký tự đầu
+        # print(f"[Dataset] CT shape: {ct.shape}, PET shape: {pet.shape}")
         return {
             'ct': ct,           # [201, 480, 480] float32
             'pet': pet,         # [201, 480, 480] float32
@@ -137,10 +138,23 @@ def create_dataloaders(config):
     - Images từ: processed_480_npy/PETCT_2017/.../ct_....npy (float16)
     - Reports từ: raw/processed_npy/.../report/....json
     """
-    # Paths
-    json_path = "/media/gpus/New Volume/processed_480_npy/label/PETCT_parts_train_val_test.json"
-    input_root = "/media/gpus/New Volume"  # Cho reports
-    output_root = "/mnt/disk1/SonDinh/SonDinh/DICE_model/training/stage1"  # Cho CT/PET
+     # Paths
+    # json_path = "/mnt/usb/processed_480_npy/label/PETCT_parts_train_val_test.json"
+    # input_root = "/mnt/usb"  # Cho reports
+    # output_root = "/mnt/disk1/aiotlab/sondinh/Model_dice/Hirra_model/training/stage1"  # Cho CT/PET
+
+    data_root = config['data'].get('root_dir', '/mnt/disk1/SonDinh/SonDinh/DICE_model/training/stage1/processed_480_npy')
+
+    # Nếu root_dir chứa "processed_480_npy", lấy parent directory
+    if 'processed_480_npy' in data_root:
+        import os
+        base_root = os.path.dirname(data_root) if data_root.endswith('processed_480_npy') else data_root.rsplit('/processed_480_npy', 1)[0]
+    else:
+        base_root = data_root
+
+    json_path = f"{base_root}/processed_480_npy/label/PETCT_parts_train_val_test.json"
+    input_root = base_root  # Cho reports
+    output_root = base_root  # Cho CT/PET - QUAN TRỌNG: Phải giống input_root!
 
     print(f"[DataLoader] JSON: {json_path}")
     print(f"[DataLoader] Reports root: {input_root}")
@@ -192,9 +206,9 @@ def create_dataloaders(config):
         shuffle=True,
         num_workers=config['data']['num_workers'],
         collate_fn=collate_fn,
-        pin_memory=True,
+        pin_memory=config['data']['pin_memory'],
         persistent_workers=True,
-        prefetch_factor=4,
+        prefetch_factor=config['data']['prefetch_factor'],
         drop_last=True
     )
 
@@ -205,9 +219,9 @@ def create_dataloaders(config):
         shuffle=False,
         num_workers=config['data']['num_workers'],
         collate_fn=collate_fn,
-        pin_memory=True,
+        pin_memory=config['data']['pin_memory'],
         persistent_workers=True,
-        prefetch_factor=4
+        prefetch_factor=config['data']['prefetch_factor']
     )
 
     print(f"[DataLoader] Train batches: {len(train_loader)}")
