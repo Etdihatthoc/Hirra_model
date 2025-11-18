@@ -1,0 +1,147 @@
+# Stage 3: Local (RoI) Feature Alignment Configuration
+
+# Data Configuration
+data:
+  json_path: "data/50samples_roi_reformat_resized.json"
+  data_root: "/mnt/disk1/aiotlab/sondinh/Model_dice/Hirra_model/training/stage3/data"
+  train_split: 0.8  # 80% train, 20% val (~40 train, 9 val samples)
+  num_workers: 4
+  seed: 42
+
+# Prompt Configuration
+prompt:
+  # Templates
+  patient_template: "PATIENT: [age: {age}, gender: {gender}, history: {history}]"
+  global_prefix: "GLOBAL: <GLOBAL_VISUALS>"
+  roi_prefix: "ROIs:"
+  roi_template: "- ROI {index}: <ROI_VISUALS>"
+  reasoning_start: "<REASONING_START>"
+
+  reason_prefix: "<REASON>"
+  reason_roi_template: "ROI {index}: {description}"
+  report_prefix: "<REPORT_START>\nIMPRESSION:"
+
+  # Token limits
+  max_prompt_tokens: 1024
+  max_target_tokens: 1024
+
+  # Special tokens
+  add_bos: true
+  add_eos: true
+
+# Model Configuration
+model:
+  # Stage 2 checkpoint to load
+  stage2_checkpoint: "../stage2/outputs/checkpoints/best.pt"
+
+  # CTViT configuration (must match Stage 2 checkpoint exactly!)
+  ctvit:
+    dim: 512
+    codebook_size: 8192
+    image_size: 480
+    patch_size: 20
+    temporal_patch_size: 10
+    spatial_depth: 4
+    temporal_depth: 4
+    dim_head: 32
+    heads: 8
+    num_fusion_layers: 4
+
+  # Feature extractor
+  feature_extractor_config: "improved"  # 'basic', 'improved', 'full'
+
+  # Language decoder
+  language_decoder_name: "Qwen/Qwen2.5-3B-Instruct"
+  language_decoder_4bit: false  # Set to true to use 4-bit quantization
+  language_decoder_kwargs: {}
+
+  # Dimensions
+  original_spatial_dims: [201, 480, 480]  # T, H, W
+  num_queries: 32  # Number of global context queries
+
+  # Graph reasoning
+  use_graph_reasoning: true
+  graph_config: "basic"  # 'basic' or 'hierarchical'
+
+  # Vision encoder settings
+  vision_gradient_checkpointing: true
+  vision_precision: "bfloat16"  # 'float32', 'float16', 'bfloat16'
+
+  # Freeze policies for Stage 3
+  freeze:
+    vision_encoder: true           # Trained in Stage 1
+    qformer: true                  # Trained in Stage 2
+    global_projector: true         # Trained in Stage 2
+    fpn: true                      # Trained in Stage 2
+    language_decoder: true         # Keep LLM frozen
+
+  # Train policies for Stage 3
+  train:
+    roi_extractor: true            # SpatialPyramidRoI3D
+    graph_module: true             # HierarchicalROIGraphModule
+    roi_projector: true            # ROI projection head
+
+# Optimizer Configuration
+optimizer:
+  type: "AdamW8bit"  # 'AdamW', 'AdamW8bit'
+
+  # Learning rates for different components
+  lr_roi_extractor: 5.0e-5
+  lr_graph_module: 5.0e-5
+  lr_roi_projector: 5.0e-5
+
+  # Optimizer params
+  weight_decay: 0.01
+  betas: [0.9, 0.999]
+  eps: 1.0e-8
+
+# Scheduler Configuration
+scheduler:
+  type: "cosine_with_warmup"
+  warmup_ratio: 0.1  # 10% of total steps for warmup
+
+# Training Configuration
+training:
+  epochs: 50
+  batch_size: 1      # Small batch size due to memory constraints with ROIs
+  grad_accum: 2      # Effective batch size = 1 * 8 = 8
+  max_grad_norm: 1.0
+
+  # Mixed precision
+  mixed_precision: "bf16"  # 'bf16', 'fp16', or false
+
+  # Checkpointing
+  save_every_epoch: true
+  validation_every_epoch: true
+  resume_from: "/mnt/disk1/aiotlab/sondinh/Model_dice/Hirra_model/training/stage3/outputs/checkpoints/best.pt" #null Path to checkpoint to resume from (optional)
+
+  # Generation settings (for validation CSV export)
+  max_gen_tokens: 1024
+
+  # Logging
+  log_interval: 10  # Log every N gradient steps
+
+# Output Configuration
+output:
+  dir: "outputs"
+  checkpoints_dir: "outputs/checkpoints"
+  predictions_dir: "outputs/predictions"
+  logs_dir: "outputs/logs"
+
+# WandB Configuration
+wandb:
+  enabled: true
+  project: "hirra-stage3"
+  run_name: "stage3_roi_alignment"
+  entity: null  # Optional: your wandb username or team
+  api_key: "072fb112587c6b4507f5ec59e575d234c3e22649"
+  tags: ["stage3", "roi", "alignment"]
+  notes: "Stage 3: Training ROI-specific components (SPP-RoI, GNN, RoI-Projector)"
+
+# System Configuration
+system:
+  device: "cuda"
+  seed: 42
+  num_workers: 4
+  pin_memory: true
+  persistent_workers: false

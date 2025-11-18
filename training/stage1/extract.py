@@ -12,9 +12,9 @@ RAW_ROOT = Path("/media/gpus/New Volume/ViMed-PET/raw")
 
 CONFIG = {
     "ratios": {
-        "abdomen_pelvis": 0.50,
-        "chest": 0.25,
         "head_neck": 0.25,
+        "chest": 0.25,
+        "abdomen_pelvis": 0.50,
     },
     "overlap": 15,
     "modalities": ("CT", "PET"),
@@ -34,9 +34,9 @@ OUTPUT_BASE.mkdir(parents=True, exist_ok=True)
 
 # Các file index ban đầu (train/val/test) theo từng năm
 JSON_SPLITS = {
-    "PETCT_2017": RAW_ROOT / "PETCT_2017_train_val_test.json",
-    "PETCT_2018": RAW_ROOT / "PETCT_2018_train_val_test.json",
-    "PETCT_2019": RAW_ROOT / "PETCT_2019_train_val_test.json",
+    "PETCT_2017": RAW_ROOT / "PETCT_2017_train_val_test.json"#,
+    # "PETCT_2018": RAW_ROOT / "PETCT_2018_train_val_test.json",
+    # "PETCT_2019": RAW_ROOT / "PETCT_2019_train_val_test.json",
 }
 
 def greedy_segments(num_slices: int, ratios: Dict[str, float], overlap: int) -> Dict[str, slice]:

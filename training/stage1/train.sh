@@ -8,12 +8,16 @@ echo "Stage 1: CLIP-style Pretraining"
 echo "========================================="
 
 # Set GPU device
-conda activate RG_DICE
-
+conda init
+conda activate stage1env
+#unset PYTORCH_CUDA_ALLOC_CONF
 export CUDA_VISIBLE_DEVICES=0
 
+export PYTORCH_CUDA_ALLOC_CONF="max_split_size_mb:128"
+
+
 # Run training
-python train.py --config config.yaml > run.txt 2>&1
+python train_CLIP.py
 
 echo "========================================="
 echo "Training finished!"

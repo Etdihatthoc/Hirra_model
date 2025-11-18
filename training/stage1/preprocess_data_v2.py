@@ -6,6 +6,7 @@ NHANH HƠN 20-30x so với CPU version!
 """
 
 import json
+import shutil
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -91,6 +92,31 @@ def load_and_preprocess_single(
         return (False, str(input_path), str(output_path), None, str(e))
 
 
+def _replace_processed_root(path_str: str, old="processed_npy", new="processed_480_npy"):
+    """
+    Replace only the first occurrence of the processed root marker in a relative path.
+    """
+    return path_str.replace(old, new, 1) if old in path_str else path_str
+
+
+def copy_report_directories(report_dirs, input_root, output_root):
+    """
+    Copy entire report directories (JSON files) to the new processed_480_npy tree.
+    """
+    copied = 0
+    for rel_dir in sorted(report_dirs):
+        src_dir = Path(input_root) / rel_dir
+        if not src_dir.exists():
+            print(f"⚠️  Report directory missing: {src_dir}")
+            continue
+        dst_rel_dir = _replace_processed_root(rel_dir)
+        dst_dir = Path(output_root) / dst_rel_dir
+        dst_dir.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(src_dir, dst_dir, dirs_exist_ok=True)
+        copied += 1
+    return copied
+
+
 def preprocess_dataset_parallel(
     json_path,
     input_root,
@@ -145,13 +171,15 @@ def preprocess_dataset_parallel(
     # Collect all file paths to process
     files_to_process = []
 
+    report_dirs = set()
+
     for sample in samples:
         # CT file
         ct_rel_path = sample['ct_img_path']  # processed_npy/PETCT_2017/.../ct_....npy
         ct_input_path = Path(input_root) / ct_rel_path
 
         # Output: thay processed_npy → processed_480_npy
-        ct_output_rel_path = ct_rel_path.replace('processed_npy', 'processed_480_npy')
+        ct_output_rel_path = _replace_processed_root(ct_rel_path)
         ct_output_path = Path(output_root) / ct_output_rel_path
 
         # Skip nếu đã tồn tại
@@ -167,7 +195,7 @@ def preprocess_dataset_parallel(
         pet_rel_path = sample['pet_img_path']
         pet_input_path = Path(input_root) / pet_rel_path
 
-        pet_output_rel_path = pet_rel_path.replace('processed_npy', 'processed_480_npy')
+        pet_output_rel_path = _replace_processed_root(pet_rel_path)
         pet_output_path = Path(output_root) / pet_output_rel_path
 
         if not pet_output_path.exists():
@@ -177,6 +205,11 @@ def preprocess_dataset_parallel(
                 'type': 'PET',
                 'sample_id': sample.get('id', 'unknown')
             })
+
+        report_path = sample.get('report_path')
+        if report_path:
+            report_dir_rel = str(Path(report_path).parent)
+            report_dirs.add(report_dir_rel)
 
     if not files_to_process:
         print("\n✓ Tất cả files đã được processed!")
@@ -238,6 +271,10 @@ def preprocess_dataset_parallel(
 
                 pbar.update(1)
 
+    # Copy report directories (only once per patient)
+    report_total = len(report_dirs)
+    copied_reports = copy_report_directories(report_dirs, input_root, output_root) if report_total else 0
+
     # Final statistics
     elapsed_time = time.time() - start_time
     print("\n" + "=" * 70)
@@ -247,6 +284,7 @@ def preprocess_dataset_parallel(
     print(f"✓ Lỗi:            {error_count} files")
     print(f"✓ Thời gian:      {elapsed_time:.1f}s ({elapsed_time/60:.1f} phút)")
     print(f"✓ Tốc độ:         {success_count/elapsed_time:.1f} files/s")
+    print(f"✓ Report dirs:    {copied_reports}/{report_total} copied")
     print(f"✓ Output root:    {output_root}")
     print("=" * 70)
 
@@ -259,13 +297,13 @@ if __name__ == '__main__':
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     parser.add_argument('--json_path', type=str,
-                        default="/media/gpus/New Volume/ViMed-PET/raw/label/PETCT_parts_train_val_test.json",
+                        default="/mnt/usb/ViMed-PET/raw/label/PETCT_parts_train_val_test.json",
                         help='Path to JSON file')
     parser.add_argument('--input_root', type=str,
-                        default="/media/gpus/New Volume/ViMed-PET/raw",
+                        default="/mnt/usb/ViMed-PET/raw",
                         help='Input root directory')
     parser.add_argument('--output_root', type=str,
-                        default="/media/gpus/New Volume/ViMed-PET",
+                        default="/mnt/disk1/aiotlab/sondinh/Model_dice/Hirra_model/training/stage1/data",
                         help='Output root directory')
     parser.add_argument('--spatial_size', type=int, default=480,
                         help='Target spatial size')

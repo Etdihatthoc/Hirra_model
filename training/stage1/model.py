@@ -16,7 +16,7 @@ import sys
 from contextlib import nullcontext
 
 # Import MultimodalEncoder từ hirra_model
-sys.path.append('/mnt/disk1/SonDinh/SonDinh/DICE_model')
+sys.path.append('/mnt/disk1/aiotlab/sondinh/Model_dice/Hirra_model')
 from hirra_model.vision_encoder.multimodal_encoder import MultimodalEncoder
 
 
@@ -320,12 +320,16 @@ if __name__ == '__main__':
 
     # Test forward
     # Batch size phải khớp với số texts trong CLIP
-    batch_size = 1
+    batch_size = 3
     ct = torch.randn(batch_size, 201, 480, 480).cuda().half()
     pet = torch.randn(batch_size, 201, 480, 480).cuda().half()
 
-    texts = ["Hình ảnh bắt xạ theo đặc điểm sinh lý ở gan, lách."]
-    
+    texts = [
+        "Hình ảnh bắt xạ theo đặc điểm sinh lý ở gan, lách.",
+        "Hình ảnh cho thấy sự tăng sinh mạch máu ở vùng tổn thương.",
+        "Hình ảnh PET cho thấy sự chuyển hóa glucose tăng cao."
+    ]
+
     print(f"Total parameters: {sum(p.numel() for p in model.parameters())}")
     print(f"Trainable parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
     

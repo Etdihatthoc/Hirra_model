@@ -1,0 +1,120 @@
+# Stage 4: End-to-End LLM Finetuning (LoRA) Configuration
+
+# Data Configuration
+data:
+  json_path: "data/50samples_roi_reformat_resized.json"  # TODO: Create this JSON file with 600 samples
+  data_root: "/mnt/disk1/aiotlab/sondinh/Model_dice/Hirra_model/training/stage3/data"
+  train_split: 0.8  # 80% train, 20% val (480 train, 120 val)
+  num_workers: 4
+  seed: 42
+
+# Prompt Configuration (same as Stage 3)
+prompt:
+  # Templates
+  patient_template: "PATIENT: [age: {age}, gender: {gender}, history: {history}]"
+  global_prefix: "GLOBAL: <GLOBAL_VISUALS>"
+  roi_prefix: "ROIs:"
+  roi_template: "- ROI {index}: <ROI_VISUALS>"
+  reasoning_start: "<REASONING_START>"
+
+  reason_prefix: "<REASON>"
+  reason_roi_template: "ROI {index}: {description}"
+  report_prefix: "<REPORT_START>\nIMPRESSION:"
+
+  # Token limits
+  max_prompt_tokens: 1024
+  max_target_tokens: 1024
+
+  # Special tokens
+  add_bos: true
+  add_eos: true
+
+# Model Configuration
+model:
+  # Stage 3 checkpoint to load (contains full trained model)
+  stage3_checkpoint: "../stage3/outputs/checkpoints/best.pt"
+
+  # LoRA Configuration
+  lora:
+    enabled: true
+    rank: 16                    # r parameter (typical: 8, 16, 32)
+    alpha: 32                   # lora_alpha (typical: 2*r)
+    dropout: 0.05               # LoRA dropout rate
+    target_modules:             # Which layers to apply LoRA
+      - "q_proj"                # Query projection
+      - "k_proj"                # Key projection
+      - "v_proj"                # Value projection
+      - "o_proj"                # Output projection
+      # Optional: Add MLP layers for more capacity
+      # - "gate_proj"
+      # - "up_proj"
+      # - "down_proj"
+
+  # Optional: Train embed_tokens and lm_head
+  train_embed_tokens: true     # Set to true if you want to train embedding layer
+  train_lm_head: true          # Set to true if you want to train lm_head
+
+# Optimizer Configuration
+optimizer:
+  type: "AdamW8bit"  # 'AdamW' or 'AdamW8bit'
+
+  # Learning rates for different components
+  lr_lora: 1.0e-4               # LoRA adapters learning rate
+  lr_embed: 5.0e-5              # embed_tokens LR (if trained)
+  lr_lm_head: 5.0e-5            # lm_head LR (if trained)
+
+  # Optimizer params
+  weight_decay: 0.01
+  betas: [0.9, 0.999]
+  eps: 1.0e-8
+
+# Scheduler Configuration
+scheduler:
+  type: "cosine_with_warmup"
+  warmup_ratio: 0.1  # 10% of total steps for warmup
+
+# Training Configuration
+training:
+  epochs: 50         # Fewer epochs for LoRA (converges faster)
+  batch_size: 1      # Can be larger than Stage 3 (LoRA uses less memory)
+  grad_accum: 2      # Effective batch size = 2 * 2 = 4
+  max_grad_norm: 1.0
+
+  # Mixed precision
+  mixed_precision: "bf16"  # 'bf16', 'fp16', or false
+
+  # Checkpointing
+  save_every_epoch: true
+  validation_every_epoch: true
+  resume_from: null  # Path to checkpoint to resume from (optional)
+
+  # Generation settings (for validation CSV export)
+  max_gen_tokens: 1024
+
+  # Logging
+  log_interval: 10  # Log every N gradient steps
+
+# Output Configuration
+output:
+  dir: "outputs"
+  checkpoints_dir: "outputs/checkpoints"
+  predictions_dir: "outputs/predictions"
+  logs_dir: "outputs/logs"
+
+# WandB Configuration
+wandb:
+  enabled: true
+  project: "hirra-stage4"
+  run_name: "stage4_lora_finetuning"
+  api_key: "072fb112587c6b4507f5ec59e575d234c3e22649"
+  entity: null  # Optional: your wandb username or team
+  tags: ["stage4", "lora", "finetuning"]
+  notes: "Stage 4: End-to-end LLM finetuning with LoRA adapters"
+
+# System Configuration
+system:
+  device: "cuda"
+  seed: 42
+  num_workers: 4
+  pin_memory: true
+  persistent_workers: false

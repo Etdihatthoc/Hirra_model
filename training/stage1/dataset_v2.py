@@ -4,6 +4,7 @@ Giữ nguyên cấu trúc thư mục từ JSON paths.
 """
 
 import json
+import os
 import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader
@@ -143,58 +144,87 @@ def create_dataloaders(config):
     # input_root = "/mnt/usb"  # Cho reports
     # output_root = "/mnt/disk1/aiotlab/sondinh/Model_dice/Hirra_model/training/stage1"  # Cho CT/PET
 
-    data_root = config['data'].get('root_dir', '/mnt/disk1/SonDinh/SonDinh/DICE_model/training/stage1/processed_480_npy')
+    data_cfg = config['data']
+    data_root = data_cfg.get('root_dir', '/mnt/usb/processed_480_npy')
 
     # Nếu root_dir chứa "processed_480_npy", lấy parent directory
     if 'processed_480_npy' in data_root:
-        import os
         base_root = os.path.dirname(data_root) if data_root.endswith('processed_480_npy') else data_root.rsplit('/processed_480_npy', 1)[0]
     else:
         base_root = data_root
 
-    json_path = f"{base_root}/processed_480_npy/label/PETCT_parts_train_val_test.json"
     input_root = base_root  # Cho reports
     output_root = base_root  # Cho CT/PET - QUAN TRỌNG: Phải giống input_root!
 
-    print(f"[DataLoader] JSON: {json_path}")
-    print(f"[DataLoader] Reports root: {input_root}")
-    print(f"[DataLoader] Images root: {output_root}")
+    def resolve_json_path(path_setting):
+        if path_setting is None:
+            return None
+        path_setting = str(path_setting)
+        if os.path.isabs(path_setting):
+            return path_setting
+        return os.path.join(data_root, path_setting)
 
-    # Load full dataset
-    full_ds = ViMedPETPreprocessedDatasetV2(
-        json_path=json_path,
-        input_root=input_root,
-        output_root=output_root,
-        config=config['data']
-    )
+    train_json_cfg = data_cfg.get('train_json')
+    val_json_cfg = data_cfg.get('val_json')
 
-    # Split train/val based on split field in JSON
-    train_indices = []
-    val_indices = []
+    if train_json_cfg and val_json_cfg:
+        train_json_path = resolve_json_path(train_json_cfg)
+        val_json_path = resolve_json_path(val_json_cfg)
 
-    # Check if JSON has 'split' field
-    has_split_field = 'split' in full_ds.samples[0] if len(full_ds.samples) > 0 else False
+        print(f"[DataLoader] Train JSON: {train_json_path}")
+        print(f"[DataLoader] Val JSON:   {val_json_path}")
+        print(f"[DataLoader] Reports root: {input_root}")
+        print(f"[DataLoader] Images root:  {output_root}")
 
-    if has_split_field:
-        print("[DataLoader] Using 'split' field from JSON")
-        for idx, sample in enumerate(full_ds.samples):
-            split = sample.get('split', 'train')
-            if split == 'train':
-                train_indices.append(idx)
-            elif split in ['val', 'validation']:
-                val_indices.append(idx)
+        train_ds = ViMedPETPreprocessedDatasetV2(
+            json_path=train_json_path,
+            input_root=input_root,
+            output_root=output_root,
+            config=data_cfg
+        )
+        val_ds = ViMedPETPreprocessedDatasetV2(
+            json_path=val_json_path,
+            input_root=input_root,
+            output_root=output_root,
+            config=data_cfg
+        )
     else:
-        # JSON không có split field, chia 80/20
-        print("[DataLoader] ⚠️  JSON không có field 'split', chia 80/20")
-        num_train = int(0.8 * len(full_ds))
-        train_indices = list(range(num_train))
-        val_indices = list(range(num_train, len(full_ds)))
-        print(f"[DataLoader] Auto-split: {num_train} train, {len(full_ds) - num_train} val")
+        # Fallback: load single JSON và auto split (giữ compatibility)
+        fallback_json = f"{base_root}/processed_480_npy/label/PETCT_parts_train_val_test.json"
+        print(f"[DataLoader] JSON: {fallback_json}")
+        print(f"[DataLoader] Reports root: {input_root}")
+        print(f"[DataLoader] Images root: {output_root}")
 
-    # Create subsets
-    from torch.utils.data import Subset
-    train_ds = Subset(full_ds, train_indices)
-    val_ds = Subset(full_ds, val_indices)
+        full_ds = ViMedPETPreprocessedDatasetV2(
+            json_path=fallback_json,
+            input_root=input_root,
+            output_root=output_root,
+            config=data_cfg
+        )
+
+        train_indices = []
+        val_indices = []
+
+        has_split_field = 'split' in full_ds.samples[0] if len(full_ds.samples) > 0 else False
+
+        if has_split_field:
+            print("[DataLoader] Using 'split' field from JSON")
+            for idx, sample in enumerate(full_ds.samples):
+                split = sample.get('split', 'train')
+                if split == 'train':
+                    train_indices.append(idx)
+                elif split in ['val', 'validation']:
+                    val_indices.append(idx)
+        else:
+            print("[DataLoader] ⚠️  JSON không có field 'split', chia 80/20")
+            num_train = int(0.8 * len(full_ds))
+            train_indices = list(range(num_train))
+            val_indices = list(range(num_train, len(full_ds)))
+            print(f"[DataLoader] Auto-split: {num_train} train, {len(full_ds) - num_train} val")
+
+        from torch.utils.data import Subset
+        train_ds = Subset(full_ds, train_indices)
+        val_ds = Subset(full_ds, val_indices)
 
     print(f"[DataLoader] Train dataset: {len(train_ds)} samples")
     print(f"[DataLoader] Val dataset: {len(val_ds)} samples")

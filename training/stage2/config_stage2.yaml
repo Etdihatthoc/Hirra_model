@@ -1,0 +1,72 @@
+# Stage 2 configuration (Global Context Alignment)
+
+data:
+  dataset_root: "/mnt/disk1/aiotlab/sondinh/Model_dice/Hirra_model/training/stage1/data/processed_480_npy"
+  train_json: "label/PETCT_parts_train.json"
+  val_json: "label/PETCT_parts_val.json"
+  num_workers: 4
+  pin_memory: true
+  prefetch_factor: 2
+  persistent_workers: true
+
+prompt:
+  template: "GLOBAL: <GLOBAL_VISUALS> REPORT:"
+  max_prompt_tokens: 48
+  max_target_tokens: 768
+  add_bos: true
+  add_eos: true
+
+model:
+  stage1_checkpoint: "/mnt/disk1/aiotlab/sondinh/Model_dice/Hirra_model/training/stage1/checkpoints_2/best_old.pt"
+  language_decoder_name: "Qwen/Qwen2.5-3B-Instruct"
+  language_decoder_4bit: false
+  feature_extractor_config: "improved"
+  num_queries: 32
+  use_graph_reasoning: true
+  graph_config: "basic"
+  train_fpn: true
+  freeze_language_decoder: true
+  freeze_vision_encoder: true
+  freeze_roi_modules: true
+  grad_checkpoint_qformer: true
+  original_spatial_dims: [201, 480, 480]
+  vision_gradient_checkpointing: true
+  vision_precision: "bfloat16"
+  ctvit:
+    dim: 512
+    codebook_size: 8192
+    image_size: 480
+    patch_size: 20
+    temporal_patch_size: 10
+    spatial_depth: 4
+    temporal_depth: 4
+    dim_head: 32
+    heads: 8
+    num_fusion_layers: 4
+
+optimizer:
+  lr_qformer: 1.0e-4
+  lr_projector: 5.0e-5
+  lr_fpn: 5.0e-5
+  weight_decay: 0.01
+
+training:
+  epochs: 25
+  batch_size: 2
+  grad_accum: 2
+  max_grad_norm: 1.0
+  warmup_ratio: 0.05
+  checkpoint_dir: "./outputs/checkpoints"
+  log_dir: "./outputs/logs"
+  resume_from: "/mnt/disk1/aiotlab/sondinh/Model_dice/Hirra_model/training/stage2/outputs/checkpoints/last.pt"
+  validation_interval: 1        # validate mỗi epoch
+
+wandb:
+  enabled: false
+  project: "hirra-stage2"
+  name: "global-context-alignment"
+  api_key: "072fb112587c6b4507f5ec59e575d234c3e22649"
+
+system:
+  seed: 42
+  mixed_precision: true
